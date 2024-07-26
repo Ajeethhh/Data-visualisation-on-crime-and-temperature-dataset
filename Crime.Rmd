@@ -1,0 +1,340 @@
+---
+title: "MA304_2310152 DATA VISUALISATION ON CRIME AND TEMPERATURE DATASET"
+output: html_document
+date: "2024-04-25"
+---
+
+          
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction:
+
+The project aims to provide a comprehensive data visualization and analysis of policing and weather data in Colchester for the year 2023. Various visualization techniques, including tables, bar plots, pie charts, density plots, box plots, scatter plots, and time series plots, are employed. Additionally, interactive graphics are also used to enhance the user experience and enable deeper exploration of the data. So, I’ve decided to combine both data sets and seek to understand the relationship between crime incidents and weather factors, identify any seasonal patterns or trends, and provide actionable insights for law enforcement agencies and policymakers.  Let's delve into the details of each visualization and uncover the story hidden within the data.
+          
+```{r, fig.align='center'}
+library(dplyr)
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+library(corrplot)
+library(plotly)
+library(knitr)
+```
+## Data preprocessing
+
+We've imported two datasets: crime data and weather data for 2023. To align the date formats, we adjusted the weather dataset to include only month and year, matching the crime data. After confirming the modification and renaming the date column.First, we're checking for missing values in the datasets to ensure data quality. Then, we're removing irrelevant columns from both datasets as they won't contribute to our analysis.This preprocessing prepares our datasets for visualization and analysis.
+
+```{r}
+df1 <- read.csv("C:\\Users\\ajeeth\\OneDrive\\Desktop\\Data Viz\\crime23.csv")
+df2 <- read.csv("C:\\Users\\ajeeth\\OneDrive\\Desktop\\Data Viz\\temp2023.csv")
+
+#str(df2)
+df2$Date<-substr(df2$Date, start=1,stop=7)
+
+colnames(df2)[which(names(df2) == "Date")] <- "date"
+```
+```{r}
+# Check for missing values
+colSums(is.na(df1))
+colSums(is.na(df2))
+```
+```{r}
+df1 <- df1[, -which(names(df1) == "context")]
+df2 <- df2[, -which(names(df2) == "PreselevHp")]
+df2 <- df2[, -which(names(df2) == "SnowDepcm")]
+df2 <- df2[, -which(names(df2) == "WindkmhDir")]
+```
+
+## Merging the Dataframe
+```{r}
+library(dplyr)
+red_df2 <- df2 %>% 
+   group_by(date) %>% 
+   summarise(across(where(is.numeric),~mean(.x,na.rm=T)))
+
+merged_df <- merge(x = df1, y = red_df2, by = "date", all.x = TRUE)
+```
+
+This code calculates the mean of numeric variables in the df2 dataset grouped by the date variable. The resulting dataframe, red_df2, contains the average values for each numeric variable per month.
+
+The merge function then combines the df1 and red_df2 datasets based on the date variable using a left join (all.x = TRUE), ensuring that all rows from df1 are retained. The resulting merged_df dataframe contains both crime data and weather data, where weather data is aggregated by month.
+
+## Two way table
+```{r, fig.align='center'}
+library(knitr)
+
+# Create two-way table
+two_way_table <- table(merged_df$category, merged_df$date)
+
+# Define column names
+col_names <- c(unique(merged_df$date))
+
+kable(two_way_table, format = "html", 
+      col.names = col_names, row.names = TRUE, 
+      caption = "Two-way table: Crime Categories VS Months",
+      align = "c",
+      table.attr = 'style="border-collapse: collapse; border: 3px solid red;"')
+```
+
+This code generates a two-way table to summarize the occurrences of different crime categories by month. Each row in the table represents a specific crime category, while each column represents a month. The values in the table indicate the frequency of each crime category in each month.The generated two-way table provides a clear overview of the distribution of crime categories over the months in the dataset. By examining the table, we can identify trends and patterns in crime occurrences throughout the year.
+
+## Stacked bar plot
+```{r, fig.align='center'}
+# Summarize data to get counts of crime by category and outcome
+crime_counts <- merged_df %>%
+  group_by(category, outcome_status) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  arrange(category, outcome_status)
+
+# Create an interactive stacked bar plot
+plot <- plot_ly(data = crime_counts, x = ~category, y = ~count, type = 'bar', name = ~outcome_status,
+                marker = list(line = list(color = 'rgba(255, 255, 255, 0.5)', width = 1)))
+plot <- plot %>% layout(title = "Count of crimes by Category and Outcome status",
+                        xaxis = list(title = "Category"),
+                        yaxis = list(title = "Crime Count"),
+                        barmode = 'stack')
+
+
+plot
+```
+
+This code summarizes the crime incidents in the merged dataset by category and outcome status, then creates an interactive stacked bar plot to visualize the results. The plot_ly() function from the plotly package is used to create the interactive plot.Each bar represents a specific category, and the height of each segment within the bar corresponds to the count of crimes with a particular outcome status. This visualization allows us to compare the distribution of outcome statuses within each category and identify any patterns or trends.
+
+## Bar plot
+```{r, fig.align='center'}
+# Create a sequence of colors for the gradient
+colors <- colorRampPalette(c("#000080", "#ADD8E6"))(length(unique(merged_df$outcome_status)))
+
+merged_df$outcome_status <- factor(merged_df$outcome_status, 
+                                   levels = names(sort(table(merged_df$outcome_status), decreasing = TRUE)))
+
+# Create the ggplot
+gg_bar_plot <- ggplot(merged_df, aes(x = outcome_status, fill = outcome_status)) +
+  geom_bar(stat = "count", show.legend = FALSE) +
+  labs(title = "Counts of Outcome Status", x = "Outcome Status", y = "Count") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7)) +
+  scale_fill_manual(values = colors)  
+
+# Convert ggplot into interactive plotly object
+bar_plot <- ggplotly(gg_bar_plot) %>%
+  layout(showlegend = FALSE)
+
+
+bar_plot
+```
+
+This code generates a bar plot of outcome status counts. The resulting bar plot visualizes the count of different outcome statuses. Each bar represents a specific outcome status, and its height corresponds to the count of occurrences of that outcome status in the dataset. This bar plot is used just to know which outcomcome status are predominant.
+
+## Pie chart
+```{r, fig.align='center'}
+library(plotly)
+
+# Create a pie chart
+pie_chart <- plot_ly(data = merged_df, labels = ~category, type = 'pie', marker = list(colors = rainbow)) %>%
+  layout(title = "Distribution of Crimes by Category", showlegend = TRUE)
+
+pie_chart
+```
+
+This chart is only used for visualization purpose.
+
+## Density plots
+```{r, fig.align='center'}
+library(plotly)
+
+# Create a crime density plot
+crime_density_plot <- ggplot(df1, aes(x = lat, y = long)) +
+  geom_density_2d() +
+  labs(title = "Density of Crime Locations", x = "latitude", y = "longitude")
+
+# Convert ggplot to plotly object
+crime_density_plot <- ggplotly(crime_density_plot)
+
+crime_density_plot
+
+```
+
+The density plot of crime locations based on latitude and longitude provides insights into the spatial distribution of crime data. From this plot, we can observe areas with higher crime densities, indicating hotspots or regions where criminal activities are more prevalent. Additionally, analyzing the spatial distributions of crime data enables the identification of trends or clusters, which may indicate specific types of locations or crimes that are commonly used by suspects. 
+
+## Violin plot
+```{r, fig.align='center'}
+# Create a violin plot to show the avg temperature distribution by month
+violin_plot <- ggplot(merged_df, aes(x = date, y = TemperatureCAvg)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Distribution of Average Temperature Across months",
+       x = "Month",
+       y = "Average Temperature (Celsius)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+violin_plot
+```
+
+The violin plot illustrates the distribution of average temperature across different months of the year. Each "violin" shape represents the kernel density estimate of temperature distribution for a specific month.
+
+The violin plots for wider months, indicate a broader range of average temperatures. Additionally, the medians for these months are positioned higher on the y-axis, suggesting warmer average temperatures compared to other months.
+
+The violin plots for narrower months, indicate a tighter clustering of average temperatures. The medians for these months are lower on the y-axis, indicating colder average temperatures compared to other months.
+
+## Scatter plot:
+```{r, fig.align='center'}
+library(dplyr)
+
+# Group merged_df by TemperatureCAvg and count occurrences
+temperature_counts <- merged_df %>%
+  group_by(TemperatureCAvg) %>%
+  summarise(count = n())
+#scatter plot of temperature vs. crime counts with modified marker style
+scatter_plot <- plot_ly(temperature_counts, x = ~TemperatureCAvg, y = ~count, 
+                                    text = ~paste("Temperature:", TemperatureCAvg,                                            "°C<br>Crime Counts:", count),
+                                    type = "scatter", mode = "markers", 
+                                    marker = list(symbol = "circle", size = 10, opacity =                                     0.7, color = ~TemperatureCAvg, colorscale =                                               "Blues", reversescale = T)) %>%
+  layout(title = "Avg Temperature vs. Crime Counts",
+         xaxis = list(title = "Avg Temperature (°C)"),
+         yaxis = list(title = "Crime Counts"),
+         hovermode = "closest")
+
+scatter_plot
+
+```
+
+This code generates a scatter plot to visualize the relationship between average temperature and crime counts. Each point represents a combination of average temperature and corresponding crime count. The marker color varies based on temperature, with darker shades indicating higher temperatures. Additionally, hovering over data points provides specific information about temperature and crime counts.
+
+## Smoothing
+```{r, fig.align='center'}
+# Create a scatter plot of Average Temperature over crime with a smoothing line
+c_counts <- merged_df %>%
+  group_by(TemperatureCAvg) %>%
+  summarize(count = n())
+scatter_plot_smoothing <- ggplot(c_counts, aes(x = TemperatureCAvg, y = count )) +
+  geom_point(aes(color = TemperatureCAvg), alpha = 0.6) + 
+  geom_smooth(method = "loess", color = "red", se = FALSE) +  # Add LOESS smoothing line, no confidence interval
+  labs(title = "Scatter Plot of Average Temperature vs crime count with Trend Line",
+       x = "Avg Temperature", y = "crime count") +
+  scale_color_gradient(low = "blue", high = "red") + 
+  theme_minimal()
+
+
+scatter_plot_smoothing
+```
+
+The scatter plot with a smoothing line displays the relationship between average temperature (in degrees Celsius) and crime count. Each data point is shown in a gradient colour, indicating the actual observations. The red line represents a smoothed trend, revealing the overall relationship between the two variables. It is also used (like a moving average) to highlight the underlying pattern and reduce noise in the data
+
+## Correlation Analysis
+```{r, fig.align='center'}
+# Select relevant columns
+corr_df <- merged_df[, grep("TemperatureCAvg|TdAvgC|HrAvg|Precmm|WindkmhInt", 
+                            names(merged_df))]
+
+# Calculate the correlation matrix
+correlation.matrix <- cor(corr_df, use = "pairwise.complete.obs")
+
+# Generate the heatmap with pheatmap
+library(pheatmap)
+pheatmap(correlation.matrix, 
+        main = "Correlation",
+        show_colnames = TRUE, 
+        show_rownames = TRUE)
+```
+The heatmap visualizes the correlation coefficients between pairs of variables. The correlation coefficients range from -1 to 1, where:
+    -1 indicates a perfect negative correlation
+     0 indicates no correlation
+     1 indicates a perfect positive correlation.
+Variables with a correlation coefficient close to 1 or -1 are highly correlated, while coefficients close to 0 indicate little to no correlation. The darker colours (red and blue) indicate stronger relationships while the lighter shades (white) indicate weaker relationships.
+
+## Time series plot 1
+```{r, fig.align='center'}
+# Create a new dataframe with the modified date column
+ts_df <- merged_df
+
+# Add "01" to the date column
+ts_df$date <- paste(merged_df$date, "-01", sep = "")
+
+# Convert date to Date format
+ts_df$date <- as.Date(ts_df$date, format = "%Y-%m-%d")
+
+time_series_plot <- ggplot(ts_df, aes(x = date)) +
+  geom_line(stat = "count", aes(color = category)) +
+  labs(title = "Time Series Plot of Crime Category Counts",
+       x = "Date",
+       y = "Count",
+       color = "Category") +
+  theme_minimal()
+
+time_series_plot
+```
+
+For performing time series analysis we, created a new dataframe ts_df by copying the merged_df dataframe. Then we appended "-01" to the existing date values in the date column to represent the first day of each month. This is done to convert the date variable to date format and specify the format as "%Y-%m-%d" to match the format of the modified dates. Then we've plotted time series plot for count of crime category and visualized how the counts of different crime categories change over time.
+
+## Time series plot 2
+```{r, fig.align='center'}
+time_series_plot_2 <- ggplot(ts_df, aes(x = date)) +
+  geom_line(aes(y = Precmm, color = "Avg Precipitation")) +
+  geom_line(aes(y = VisKm, color = "Avg visiblity in kilometers")) +
+  scale_color_manual(values = c("Avg Precipitation" = "blue", "Avg visiblity in kilometers" = "green")) +
+  labs(title = "Time Series Plot of Average Precipitation and visiblity",
+       x = "Month",
+       y = "Value") +
+  theme_minimal()
+
+time_series_plot_2
+```
+
+We've plotted time series plot for Average Precipitation and average visiblity and visualized how these change over time. 
+
+## Leaflet
+```{r, fig.align='center'}
+library(leaflet)
+
+# Create a color palette 
+col <- colorNumeric(palette = "Purples", domain = merged_df$Precmm)
+
+# Create a leaflet map
+precp_map <- leaflet(merged_df) %>%
+  addTiles() %>%  
+  addCircleMarkers(~long, ~lat, label = ~paste("Precipitation", Precmm),
+                   color = ~col(Precmm), radius = 5, opacity = 0.8, fillOpacity = 0.8) %>%
+  addLegend("bottomright", pal = col, values = ~Precmm, 
+            title = "Average Precipitation",
+            opacity = 1) %>%
+  setView(lng = mean(merged_df$long), lat = mean(merged_df$lat), zoom = 10)
+
+precp_map
+```
+
+This code generates a leaflet map (precp_map) showing the average precipitation levels. 
+The map displays circle markers representing different locations, where the size and color of each marker show the average precipitation level. Lighter colors indicate lower precipitation, while darker colors represent higher precipitation. Hovering over markers reveals the precise precipitation value. This map enables comparison of rainfall levels across areas, aiding in identifying the crime recorded regions with different amounts of rainfall.
+
+
+
+          
+## Approach, Story and Findings:
+
+To start, we've imported two datasets: one containing crime data and the other weather data for the year 2023. We adjusted the date format in the weather data to only include the month and year, aligning it with the format in the crime data. Next, we’ve changed the variable name of date in weather data to match with that of the crime data. This ensures consistency between the datasets. As said our approach is to combine the data sets to understand the insights, we've merged the datasets with the date variable. As part of our analysis approach, we aim to combine the datasets for analysis. Upon reviewing the weather data, we noticed null values in an entire column. To streamline our analysis, we decided to drop columns with null values and those that aren't relevant to our analysis. For columns with fewer null values, we summarized the data by calculating the mean, thus successfully merging our datasets with date variable by left join. The table offers a comprehensive view of how crime categories vary over time. It's evident that crime reports tend to peak during the summer months, particularly from June to August. However, one notable observation is that violent crimes are consistently reported at higher rates throughout the year, regardless of weather conditions or seasonal changes. This suggests a persistent issue that requires focused attention from law officials. Overall, the table provides valuable insights into the seasonal trends of different crime categories, helping us understand when and where certain types of crimes are more prevalent. Next, I used a stacked bar plot to visualize the outcomes of reported crimes and evaluate the effectiveness of law enforcement responses. The plot reveals that the majority of investigations are completed without identifying the suspect, indicating a potential recurrence of similar crimes. Additionally, "unable to prosecute suspect" ranks second, suggesting that insufficient evidence hampers the prosecution of suspects. These findings highlight the challenges faced by law enforcement in apprehending and prosecuting offenders, providing valuable insights into areas requiring improvement in crime resolution efforts. Next, I've created a density plot of crime locations based on latitude and longitude to analyze the spatial distribution of crime data. From the plot, we can observe areas with higher concentrations of crime incidents, indicated by darker regions on the density plot. This helps us understand the geographical hotspots of crime activity in Colchester. The density plot of crime locations based on latitude and longitude provides insights into the spatial distribution of crime data. From this plot, we can observe areas with higher crime densities, indicating hotspots or regions where criminal activities are more prevalent. Understanding these spatial patterns can help law officials allocate resources more effectively, such as deploying patrols or implementing surveillance in high-crime areas. Overall, this analysis aids in developing targeted strategies to address crime and enhance public safety in vulnerable areas. Further, I've created a violin plot to analyze the relationship between average temperature and the month of the year to find that Summer months exhibit a wider range of temperatures, while winter months experience a tighter range of colder temperatures. This insight aligns with our previous findings and provides further context to understand how temperature variations may influence crime patterns in Colchester.
+          
+Continuing our visualisation, I've created a scatter plot to examine the relationship between temperature and crime counts. This visualization helps us understand if there's any correlation between temperature and the occurrence of crimes. Upon reviewing the scatter plot, it's apparent that a higher number of crimes occur during extreme temperatures, both in summer (>16 degree) and winter(<8 degree). This suggests that crime incidents are more prevalent during both hot and cold weather conditions. This finding aligns with our previous observations, where we noticed seasonal patterns in crime rates and temperature variations. It reinforces the notion that temperature plays a significant role in influencing crime trends, with more incidents happening during extreme temperature conditions. Also a smoothing line is added to act as an extra layer to our visualisation, thus establishing a relationship between average temperature and crime counts and to emphasize on the fact that temperature indeed influences crime rates. 
+
+To draw stronger conclusions, I utilized time series plots to analyze trends over time. The first plot visualizes the number of crimes occurring each month, offering a clearer and more readable representation compared to the two-way table. From this plot, it's evident that crime rates fluctuate throughout the year, with notable peaks during certain months. In the second plot, I examined the average precipitation and visibility over the same time period. Comparing both plots reveals that crime rates rise with increased visibility, indicating crimes predominantly occur in daylight. Conversely, during dull times, crime rates are lower. Additionally, when precipitation levels increase, crime rates also rise, suggesting a correlation between rainfall and criminal activity. This implies that more crimes tend to occur during periods of increased rainfall, potentially due to decreased surveillance or other environmental factors.
+
+In summary, crimes peak during periods of higher visibility and rainfall, while decreasing during dull weather conditions. This underscores the influence of environmental factors on criminal activity and emphasizes the importance of considering weather patterns in crime prevention strategies.
+
+## References
+
+R Core Team. (2023). R: A Language and Environment for Statistical Computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+
+Kolde, R. (2019). pheatmap: Pretty Heatmaps. R package version 1.0.12. https://CRAN.R-project.org/package=pheatmap 
+
+Cheng, J., Karambelkar, B., & Xie, Y. (2021). leaflet: Create Interactive Web Maps with the JavaScript 'Leaflet' Library. R package version 2.0.4.1. https://CRAN.R-project.org/package=leaflet 
+
+R Core Team. (2023). R: A Language and Environment for Statistical Computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+
+
+
+
+
+
+
+
